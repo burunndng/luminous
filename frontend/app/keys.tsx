@@ -9,10 +9,12 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
+import * as DocumentPicker from 'expo-document-picker';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -65,7 +67,10 @@ export default function KeysScreen() {
   const [camelotWheel, setCamelotWheel] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [showAddTrack, setShowAddTrack] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [tracks, setTracks] = useState<any[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
   const [newTrack, setNewTrack] = useState({
     title: '',
     artist: '',
@@ -129,6 +134,110 @@ export default function KeysScreen() {
     }
   };
 
+  const deleteTrack = async (trackId: string) => {
+    Alert.alert(
+      'Delete Track',
+      'Are you sure you want to delete this track?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await axios.delete(`${API_URL}/api/tracks/${trackId}`);
+              fetchTracks();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete track');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const importAudioFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['audio/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const file = result.assets[0];
+      setAnalyzing(true);
+      setShowImportModal(true);
+
+      // Create form data for upload
+      const formData = new FormData();
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name,
+        type: file.mimeType || 'audio/mpeg',
+      } as any);
+
+      try {
+        const response = await axios.post(`${API_URL}/api/audio/analyze`, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        setAnalysisResult(response.data);
+        
+        // Pre-fill track name from filename
+        const trackName = file.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' ');
+        setNewTrack({
+          ...newTrack,
+          title: trackName,
+          artist: '',
+          key: '',
+          bpm: '',
+        });
+      } catch (error) {
+        console.error('Analysis error:', error);
+        // Still allow manual entry
+        const trackName = file.name.replace(/\.[^/.]+$/, '').replace(/_/g, ' ');
+        setNewTrack({
+          ...newTrack,
+          title: trackName,
+        });
+        setAnalysisResult({
+          filename: file.name,
+          analysis_notes: 'Could not analyze file. Please enter BPM and key manually.',
+        });
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to pick audio file');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const addFromImport = async () => {
+    if (!newTrack.title) {
+      Alert.alert('Error', 'Please enter a track title');
+      return;
+    }
+    try {
+      await axios.post(`${API_URL}/api/tracks`, {
+        title: newTrack.title,
+        artist: newTrack.artist || 'Unknown Artist',
+        key: newTrack.key || null,
+        bpm: newTrack.bpm ? parseFloat(newTrack.bpm) : null,
+      });
+      setShowImportModal(false);
+      setAnalysisResult(null);
+      setNewTrack({ title: '', artist: '', key: '', bpm: '' });
+      fetchTracks();
+      Alert.alert('Success', 'Track imported!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to add track');
+    }
+  };
+
   const getKeyPosition = (code: string, containerSize: number) => {
     const pos = CAMELOT_POSITIONS.find((p) => p.code === code);
     if (!pos) return { x: 0, y: 0 };
@@ -160,11 +269,9 @@ export default function KeysScreen() {
           <Text style={styles.subtitle}>Tap a key to see compatible mixes</Text>
           
           <View style={[styles.wheelContainer, { width: wheelSize, height: wheelSize }]}>
-            {/* Background circles */}
             <View style={[styles.wheelRing, styles.outerRing]} />
             <View style={[styles.wheelRing, styles.innerRing]} />
             
-            {/* Key buttons */}
             {CAMELOT_POSITIONS.map((pos) => {
               const position = getKeyPosition(pos.code, wheelSize);
               const isSelected = selectedKey === pos.code;
@@ -242,15 +349,9 @@ export default function KeysScreen() {
 
             <View style={styles.tipsSection}>
               <Text style={styles.tipsTitle}>Mixing Tips</Text>
-              <Text style={styles.tipText}>
-                • Same key: Perfect energy match
-              </Text>
-              <Text style={styles.tipText}>
-                • +1/-1: Smooth progression
-              </Text>
-              <Text style={styles.tipText}>
-                • A to B: Major/minor switch
-              </Text>
+              <Text style={styles.tipText}>• Same key: Perfect energy match</Text>
+              <Text style={styles.tipText}>• +1/-1: Smooth progression</Text>
+              <Text style={styles.tipText}>• A to B: Major/minor switch</Text>
             </View>
           </View>
         )}
@@ -259,12 +360,20 @@ export default function KeysScreen() {
         <View style={styles.librarySection}>
           <View style={styles.libraryHeader}>
             <Text style={styles.sectionTitle}>Track Library</Text>
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => setShowAddTrack(true)}
-            >
-              <Ionicons name="add" size={24} color="#00D4FF" />
-            </TouchableOpacity>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity
+                style={styles.importButton}
+                onPress={importAudioFile}
+              >
+                <Ionicons name="cloud-upload" size={20} color="#00D4FF" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => setShowAddTrack(true)}
+              >
+                <Ionicons name="add" size={24} color="#00D4FF" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {tracks.length === 0 ? (
@@ -272,31 +381,47 @@ export default function KeysScreen() {
               <Ionicons name="musical-notes" size={48} color="#444" />
               <Text style={styles.emptyText}>No tracks yet</Text>
               <Text style={styles.emptySubtext}>Add tracks to see harmonic matches</Text>
+              <TouchableOpacity
+                style={styles.emptyImportButton}
+                onPress={importAudioFile}
+              >
+                <Ionicons name="cloud-upload" size={20} color="#000" />
+                <Text style={styles.emptyImportText}>Import Audio File</Text>
+              </TouchableOpacity>
             </View>
           ) : (
-            tracks.slice(0, 5).map((track) => (
-              <View key={track.id} style={styles.trackItem}>
+            tracks.map((track) => (
+              <TouchableOpacity 
+                key={track.id} 
+                style={styles.trackItem}
+                onLongPress={() => deleteTrack(track.id)}
+              >
                 <View style={styles.trackInfo}>
                   <Text style={styles.trackTitle}>{track.title}</Text>
                   <Text style={styles.trackArtist}>{track.artist}</Text>
                 </View>
                 <View style={styles.trackMeta}>
                   {track.key && (
-                    <View
+                    <TouchableOpacity
+                      onPress={() => handleKeySelect(track.key)}
                       style={[
                         styles.trackKeyBadge,
                         { backgroundColor: KEY_COLORS[track.key] || '#2d2d44' },
                       ]}
                     >
                       <Text style={styles.trackKeyText}>{track.key}</Text>
-                    </View>
+                    </TouchableOpacity>
                   )}
                   {track.bpm && (
                     <Text style={styles.trackBpm}>{track.bpm} BPM</Text>
                   )}
                 </View>
-              </View>
+              </TouchableOpacity>
             ))
+          )}
+          
+          {tracks.length > 0 && (
+            <Text style={styles.hintText}>Long press a track to delete</Text>
           )}
         </View>
       </ScrollView>
@@ -345,6 +470,83 @@ export default function KeysScreen() {
             <TouchableOpacity style={styles.submitButton} onPress={addTrack}>
               <Text style={styles.submitButtonText}>Add Track</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Import Audio Modal */}
+      <Modal visible={showImportModal} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Import Audio</Text>
+              <TouchableOpacity onPress={() => {
+                setShowImportModal(false);
+                setAnalysisResult(null);
+              }}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {analyzing ? (
+              <View style={styles.analyzingContainer}>
+                <ActivityIndicator size="large" color="#00D4FF" />
+                <Text style={styles.analyzingText}>Analyzing audio file...</Text>
+              </View>
+            ) : analysisResult ? (
+              <>
+                <View style={styles.analysisResultBox}>
+                  <View style={styles.analysisHeader}>
+                    <Ionicons name="musical-note" size={24} color="#00D4FF" />
+                    <Text style={styles.analysisFilename}>{analysisResult.filename}</Text>
+                  </View>
+                  {analysisResult.duration_seconds && (
+                    <Text style={styles.analysisMeta}>
+                      Duration: ~{Math.round(analysisResult.duration_seconds / 60)} minutes
+                    </Text>
+                  )}
+                  <Text style={styles.analysisNote}>{analysisResult.analysis_notes}</Text>
+                </View>
+
+                <Text style={styles.inputLabel}>Track Details</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Track Title"
+                  placeholderTextColor="#666"
+                  value={newTrack.title}
+                  onChangeText={(text) => setNewTrack({ ...newTrack, title: text })}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Artist"
+                  placeholderTextColor="#666"
+                  value={newTrack.artist}
+                  onChangeText={(text) => setNewTrack({ ...newTrack, artist: text })}
+                />
+                <View style={styles.rowInputs}>
+                  <TextInput
+                    style={[styles.input, styles.halfInput]}
+                    placeholder="Key (e.g., 8A)"
+                    placeholderTextColor="#666"
+                    value={newTrack.key}
+                    onChangeText={(text) => setNewTrack({ ...newTrack, key: text })}
+                  />
+                  <TextInput
+                    style={[styles.input, styles.halfInput]}
+                    placeholder="BPM"
+                    placeholderTextColor="#666"
+                    keyboardType="numeric"
+                    value={newTrack.bpm}
+                    onChangeText={(text) => setNewTrack({ ...newTrack, bpm: text })}
+                  />
+                </View>
+
+                <TouchableOpacity style={styles.submitButton} onPress={addFromImport}>
+                  <Ionicons name="add-circle" size={20} color="#000" />
+                  <Text style={styles.submitButtonText}>Add to Library</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -498,6 +700,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 15,
   },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  importButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#1a1a2e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
   addButton: {
     width: 44,
     height: 44,
@@ -521,6 +736,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#444',
     marginTop: 5,
+    marginBottom: 20,
+  },
+  emptyImportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#00D4FF',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+  },
+  emptyImportText: {
+    color: '#000',
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
   trackItem: {
     flexDirection: 'row',
@@ -563,6 +792,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#00D4FF',
   },
+  hintText: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: '#444',
+    marginTop: 5,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.8)',
@@ -594,16 +829,67 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 15,
   },
+  inputLabel: {
+    fontSize: 14,
+    color: '#888',
+    marginBottom: 10,
+  },
+  rowInputs: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  halfInput: {
+    width: '48%',
+  },
   submitButton: {
+    flexDirection: 'row',
     backgroundColor: '#00D4FF',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 10,
   },
   submitButtonText: {
     color: '#000',
     fontSize: 16,
     fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  analyzingContainer: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  analyzingText: {
+    color: '#888',
+    marginTop: 15,
+  },
+  analysisResultBox: {
+    backgroundColor: '#2d2d44',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+  },
+  analysisHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  analysisFilename: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 10,
+    flex: 1,
+  },
+  analysisMeta: {
+    color: '#00D4FF',
+    fontSize: 12,
+    marginBottom: 10,
+  },
+  analysisNote: {
+    color: '#888',
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

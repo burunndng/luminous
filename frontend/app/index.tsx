@@ -227,7 +227,7 @@ export default function BPMScreen() {
               { genre: 'Techno', range: '130-150' },
               { genre: 'Drum & Bass', range: '160-180' },
               { genre: 'Dubstep', range: '140-150' },
-              { genre: 'Trance', range: '130-145' },
+              { genre: 'Psytrance', range: '140-150' },
             ].map((item, index) => (
               <View key={index} style={styles.guideItem}>
                 <Text style={styles.guideGenre}>{item.genre}</Text>

@@ -8,12 +8,24 @@ import {
   Animated,
   Easing,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+
+const TIP_CATEGORIES = [
+  { key: 'all', label: 'All Tips', icon: 'bulb' },
+  { key: 'beatmatching', label: 'Beatmatching', icon: 'musical-note' },
+  { key: 'harmonic_mixing', label: 'Harmonic', icon: 'musical-notes' },
+  { key: 'transitions', label: 'Transitions', icon: 'swap-horizontal' },
+  { key: 'energy_management', label: 'Energy', icon: 'flame' },
+  { key: 'technical', label: 'Technical', icon: 'settings' },
+  { key: 'preparation', label: 'Prep', icon: 'folder' },
+  { key: 'psytrance_specific', label: 'Psytrance', icon: 'planet' },
+];
 
 export default function PracticeScreen() {
   const [isRunning, setIsRunning] = useState(false);
@@ -22,12 +34,17 @@ export default function PracticeScreen() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [tips, setTips] = useState<any>({});
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [showTips, setShowTips] = useState(true);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchData();
+    fetchTips();
   }, []);
 
   useEffect(() => {
@@ -36,7 +53,6 @@ export default function PracticeScreen() {
         setElapsedTime((prev) => prev + 1);
       }, 1000);
       
-      // Start crossfader animation
       const crossfade = Animated.loop(
         Animated.sequence([
           Animated.timing(fadeAnim, {
@@ -55,7 +71,6 @@ export default function PracticeScreen() {
       );
       crossfade.start();
       
-      // Pulse animation
       const pulse = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
@@ -98,7 +113,23 @@ export default function PracticeScreen() {
       console.error('Error fetching practice data:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const fetchTips = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/tips`);
+      setTips(response.data);
+    } catch (error) {
+      console.error('Error fetching tips:', error);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchData();
+    fetchTips();
   };
 
   const startSession = () => {
@@ -145,6 +176,37 @@ export default function PracticeScreen() {
     return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
   };
 
+  const getFilteredTips = () => {
+    if (selectedCategory === 'all') {
+      const allTips: any[] = [];
+      Object.entries(tips).forEach(([category, categoryTips]: [string, any]) => {
+        categoryTips.forEach((tip: any) => {
+          allTips.push({ ...tip, main_category: category });
+        });
+      });
+      return allTips;
+    }
+    return tips[selectedCategory]?.map((tip: any) => ({ ...tip, main_category: selectedCategory })) || [];
+  };
+
+  const getCategoryIcon = (category: string) => {
+    const cat = TIP_CATEGORIES.find(c => c.key === category);
+    return cat?.icon || 'bulb';
+  };
+
+  const getCategoryColor = (category: string) => {
+    const colors: { [key: string]: string } = {
+      beatmatching: '#FF6B6B',
+      harmonic_mixing: '#00D4FF',
+      transitions: '#FECA57',
+      energy_management: '#FF9F43',
+      technical: '#54A0FF',
+      preparation: '#1DD1A1',
+      psytrance_specific: '#A55EEA',
+    };
+    return colors[category] || '#00D4FF';
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -155,7 +217,12 @@ export default function PracticeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />
+        }
+      >
         {/* Timer Display */}
         <Animated.View
           style={[
@@ -270,6 +337,96 @@ export default function PracticeScreen() {
           </View>
         )}
 
+        {/* DJ Tips Section */}
+        <View style={styles.tipsSection}>
+          <TouchableOpacity 
+            style={styles.tipsSectionHeader}
+            onPress={() => setShowTips(!showTips)}
+          >
+            <View style={styles.tipsHeaderLeft}>
+              <Ionicons name="school" size={24} color="#00D4FF" />
+              <Text style={styles.tipsMainTitle}>Pro DJ Tips</Text>
+            </View>
+            <Ionicons 
+              name={showTips ? "chevron-up" : "chevron-down"} 
+              size={24} 
+              color="#666" 
+            />
+          </TouchableOpacity>
+
+          {showTips && (
+            <>
+              {/* Category Filter */}
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                style={styles.categoryScroll}
+              >
+                {TIP_CATEGORIES.map((cat) => (
+                  <TouchableOpacity
+                    key={cat.key}
+                    style={[
+                      styles.categoryChip,
+                      selectedCategory === cat.key && styles.categoryChipActive,
+                    ]}
+                    onPress={() => setSelectedCategory(cat.key)}
+                  >
+                    <Ionicons 
+                      name={cat.icon as any} 
+                      size={16} 
+                      color={selectedCategory === cat.key ? '#000' : '#888'} 
+                    />
+                    <Text style={[
+                      styles.categoryChipText,
+                      selectedCategory === cat.key && styles.categoryChipTextActive,
+                    ]}>
+                      {cat.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Tips List */}
+              <View style={styles.tipsList}>
+                {getFilteredTips().slice(0, 6).map((tip: any, index: number) => (
+                  <View 
+                    key={index} 
+                    style={[
+                      styles.tipCard,
+                      { borderLeftColor: getCategoryColor(tip.main_category) }
+                    ]}
+                  >
+                    <View style={styles.tipHeader}>
+                      <View style={[
+                        styles.tipCategoryBadge,
+                        { backgroundColor: getCategoryColor(tip.main_category) + '30' }
+                      ]}>
+                        <Ionicons 
+                          name={getCategoryIcon(tip.main_category) as any}
+                          size={14}
+                          color={getCategoryColor(tip.main_category)}
+                        />
+                        <Text style={[
+                          styles.tipCategoryText,
+                          { color: getCategoryColor(tip.main_category) }
+                        ]}>
+                          {tip.category}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.tipTitle}>{tip.title}</Text>
+                    <Text style={styles.tipText}>{tip.tip}</Text>
+                    <View style={styles.tipSource}>
+                      <Ionicons name="person" size={12} color="#666" />
+                      <Text style={styles.tipSourceText}>{tip.source}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+        </View>
+
         {/* Recent Sessions */}
         <View style={styles.historySection}>
           <Text style={styles.sectionTitle}>Recent Sessions</Text>
@@ -282,7 +439,7 @@ export default function PracticeScreen() {
               </Text>
             </View>
           ) : (
-            sessions.slice(0, 5).map((session, index) => (
+            sessions.slice(0, 5).map((session) => (
               <View key={session.id} style={styles.sessionItem}>
                 <View style={styles.sessionIcon}>
                   <Ionicons name="musical-notes" size={20} color="#00D4FF" />
@@ -304,31 +461,6 @@ export default function PracticeScreen() {
               </View>
             ))
           )}
-        </View>
-
-        {/* Tips */}
-        <View style={styles.tipsSection}>
-          <Text style={styles.sectionTitle}>Practice Tips</Text>
-          <View style={styles.tipCard}>
-            <Ionicons name="bulb" size={24} color="#FECA57" />
-            <View style={styles.tipContent}>
-              <Text style={styles.tipTitle}>Smooth Transitions</Text>
-              <Text style={styles.tipText}>
-                Practice matching the beat of both tracks before moving the crossfader. 
-                Start with tracks that have similar BPMs.
-              </Text>
-            </View>
-          </View>
-          <View style={styles.tipCard}>
-            <Ionicons name="ear" size={24} color="#54A0FF" />
-            <View style={styles.tipContent}>
-              <Text style={styles.tipTitle}>Listen to the Phrase</Text>
-              <Text style={styles.tipText}>
-                Start your transitions at the beginning of a phrase (usually every 16 or 32 beats) 
-                for more natural-sounding mixes.
-              </Text>
-            </View>
-          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -505,6 +637,101 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
+  tipsSection: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 25,
+  },
+  tipsSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  tipsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tipsMainTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginLeft: 10,
+  },
+  categoryScroll: {
+    marginBottom: 15,
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2d2d44',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  categoryChipActive: {
+    backgroundColor: '#00D4FF',
+  },
+  categoryChipText: {
+    fontSize: 12,
+    color: '#888',
+    marginLeft: 6,
+  },
+  categoryChipTextActive: {
+    color: '#000',
+    fontWeight: '600',
+  },
+  tipsList: {
+    gap: 12,
+  },
+  tipCard: {
+    backgroundColor: '#2d2d44',
+    borderRadius: 12,
+    padding: 15,
+    borderLeftWidth: 4,
+    marginBottom: 10,
+  },
+  tipHeader: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  tipCategoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  tipCategoryText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 5,
+    textTransform: 'capitalize',
+  },
+  tipTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  tipText: {
+    fontSize: 13,
+    color: '#bbb',
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  tipSource: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tipSourceText: {
+    fontSize: 11,
+    color: '#666',
+    marginLeft: 5,
+    fontStyle: 'italic',
+  },
   historySection: {
     marginBottom: 25,
   },
@@ -565,30 +792,5 @@ const styles = StyleSheet.create({
   sessionCrossfadesLabel: {
     fontSize: 10,
     color: '#666',
-  },
-  tipsSection: {
-    marginBottom: 20,
-  },
-  tipCard: {
-    flexDirection: 'row',
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 10,
-  },
-  tipContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  tipTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 5,
-  },
-  tipText: {
-    fontSize: 12,
-    color: '#888',
-    lineHeight: 18,
   },
 });

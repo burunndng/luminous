@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="22" time="46.145" timestamp="2026-04-13T10:27:13.122967+00:00" hostname="agent-env-0e90211f-03f1-4b81-97e3-9848f4e0a11d"><testcase classname="tests.test_backend_api.TestHealth" name="test_health_check" time="0.633" /><testcase classname="tests.test_backend_api.TestTracks" name="test_create_track_and_verify" time="0.397" /><testcase classname="tests.test_backend_api.TestTracks" name="test_get_all_tracks" time="0.113" /><testcase classname="tests.test_backend_api.TestTracks" name="test_update_track" time="0.230" /><testcase classname="tests.test_backend_api.TestTracks" name="test_delete_track" time="0.152" /><testcase classname="tests.test_backend_api.TestSetlists" name="test_create_setlist_and_verify" time="0.153" /><testcase classname="tests.test_backend_api.TestSetlists" name="test_get_all_setlists" time="0.075" /><testcase classname="tests.test_backend_api.TestSetlists" name="test_get_setlist_tracks" time="0.346" /><testcase classname="tests.test_backend_api.TestCamelotWheel" name="test_get_camelot_wheel" time="0.106" /><testcase classname="tests.test_backend_api.TestCamelotWheel" name="test_get_compatible_keys_8A" time="0.078" /><testcase classname="tests.test_backend_api.TestCamelotWheel" name="test_invalid_key" time="0.071" /><testcase classname="tests.test_backend_api.TestAIRecommendations" name="test_ai_recommendations_basic" time="12.503"><failure message="TypeError: object of type 'NoneType' has no len()">tests/test_backend_api.py:207: in test_ai_recommendations_basic
+    assert len(data["recommendations"]) &gt; 0
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: object of type 'NoneType' has no len()</failure></testcase><testcase classname="tests.test_backend_api.TestAIRecommendations" name="test_ai_recommendations_minimal" time="30.072"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='spin-master-76.preview.emergentagent.com', port=443): Read timed out. (read timeout=30)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:1415: in getresponse
+    response.begin()
+/usr/local/lib/python3.11/http/client.py:330: in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/http/client.py:291: in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/socket.py:718: in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1314: in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/ssl.py:1166: in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:645: in send
+    resp = conn.urlopen(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
+    raise value
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
+    raise ReadTimeoutError(
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='spin-master-76.preview.emergentagent.com', port=443): Read timed out. (read timeout=30)
+
+During handling of the above exception, another exception occurred:
+tests/test_backend_api.py:213: in test_ai_recommendations_minimal
+    response = api_client.post(
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:640: in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:592: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/sessions.py:706: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/requests/adapters.py:691: in send
+    raise ReadTimeout(e, request=request)
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='spin-master-76.preview.emergentagent.com', port=443): Read timed out. (read timeout=30)</failure></testcase><testcase classname="tests.test_backend_api.TestPracticeSessions" name="test_create_practice_session" time="0.137" /><testcase classname="tests.test_backend_api.TestPracticeSessions" name="test_get_practice_sessions" time="0.090" /><testcase classname="tests.test_backend_api.TestPracticeSessions" name="test_get_practice_stats" time="0.077" /><testcase classname="tests.test_backend_api.TestDJTips" name="test_get_all_tips" time="0.088" /><testcase classname="tests.test_backend_api.TestDJTips" name="test_get_psytrance_tips" time="0.075" /><testcase classname="tests.test_backend_api.TestDJTips" name="test_get_tips_by_category" time="0.102" /><testcase classname="tests.test_backend_api.TestDJTips" name="test_invalid_category" time="0.083" /><testcase classname="tests.test_backend_api.TestPDFExport" name="test_export_setlist_to_pdf" time="0.290" /><testcase classname="tests.test_backend_api.TestPDFExport" name="test_export_nonexistent_setlist" time="0.067" /></testsuite></testsuites>

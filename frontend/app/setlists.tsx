@@ -9,10 +9,14 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -24,6 +28,7 @@ export default function SetlistsScreen() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedSetlist, setSelectedSetlist] = useState<any>(null);
   const [setlistTracks, setSetlistTracks] = useState<any[]>([]);
+  const [exporting, setExporting] = useState(false);
   const [newSetlist, setNewSetlist] = useState({
     name: '',
     venue: '',
@@ -105,6 +110,45 @@ export default function SetlistsScreen() {
         },
       ]
     );
+  };
+
+  const exportToPdf = async () => {
+    if (!selectedSetlist) return;
+    
+    setExporting(true);
+    try {
+      const pdfUrl = `${API_URL}/api/setlists/${selectedSetlist.id}/export/pdf`;
+      
+      if (Platform.OS === 'web') {
+        // For web, open in new tab
+        window.open(pdfUrl, '_blank');
+      } else {
+        // For mobile, download and share
+        const filename = `${selectedSetlist.name.replace(/\s+/g, '_')}_setlist.pdf`;
+        const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+        
+        const downloadResult = await FileSystem.downloadAsync(pdfUrl, fileUri);
+        
+        if (downloadResult.status === 200) {
+          const canShare = await Sharing.isAvailableAsync();
+          if (canShare) {
+            await Sharing.shareAsync(downloadResult.uri, {
+              mimeType: 'application/pdf',
+              dialogTitle: `Share ${selectedSetlist.name} Setlist`,
+            });
+          } else {
+            Alert.alert('Success', `PDF saved to: ${fileUri}`);
+          }
+        } else {
+          throw new Error('Download failed');
+        }
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      Alert.alert('Error', 'Failed to export PDF. Please try again.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const addTrackToSetlist = async (trackId: string) => {
@@ -312,7 +356,7 @@ export default function SetlistsScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, styles.detailModal]}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.modalHeaderLeft}>
                 <Text style={styles.modalTitle}>{selectedSetlist?.name}</Text>
                 {selectedSetlist?.venue && (
                   <Text style={styles.modalSubtitle}>
@@ -366,6 +410,19 @@ export default function SetlistsScreen() {
                 <Ionicons name="add" size={20} color="#000" />
                 <Text style={styles.addTrackText}>Add Track</Text>
               </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.exportButton, exporting && styles.exportButtonDisabled]}
+                onPress={exportToPdf}
+                disabled={exporting}
+              >
+                {exporting ? (
+                  <ActivityIndicator size="small" color="#00D4FF" />
+                ) : (
+                  <Ionicons name="document-text" size={20} color="#00D4FF" />
+                )}
+              </TouchableOpacity>
+              
               <TouchableOpacity
                 style={styles.deleteButton}
                 onPress={() => deleteSetlist(selectedSetlist?.id)}
@@ -373,6 +430,12 @@ export default function SetlistsScreen() {
                 <Ionicons name="trash" size={20} color="#FF6B6B" />
               </TouchableOpacity>
             </View>
+            
+            {setlistTracks.length > 0 && (
+              <Text style={styles.exportHint}>
+                Tap the document icon to export as PDF
+              </Text>
+            )}
           </View>
         </View>
       </Modal>
@@ -591,6 +654,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 20,
   },
+  modalHeaderLeft: {
+    flex: 1,
+    marginRight: 15,
+  },
   modalTitle: {
     fontSize: 22,
     fontWeight: 'bold',
@@ -696,6 +763,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 8,
   },
+  exportButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: '#2d2d44',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  exportButtonDisabled: {
+    opacity: 0.6,
+  },
   deleteButton: {
     width: 50,
     height: 50,
@@ -703,5 +782,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#2d2d44',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  exportHint: {
+    textAlign: 'center',
+    fontSize: 11,
+    color: '#666',
+    marginTop: 10,
   },
 });
