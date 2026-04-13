@@ -14,7 +14,7 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import axios from 'axios';
 import * as DocumentPicker from 'expo-document-picker';
-import { Audio } from 'expo-av';
+import { useAudioRecorder, AudioModule, RecordingPresets, useAudioRecorderState, setAudioModeAsync } from 'expo-audio';
 
 const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -46,7 +46,8 @@ export default function AnalyzeScreen() {
   const [recordingTime, setRecordingTime] = useState(0);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [savingTrack, setSavingTrack] = useState(false);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(audioRecorder, 1000);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -111,20 +112,18 @@ export default function AnalyzeScreen() {
   // ===== MICROPHONE RECORDING =====
   const startRecording = async () => {
     try {
-      const perm = await Audio.requestPermissionsAsync();
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
       if (!perm.granted) {
         Alert.alert('Permission Required', 'Microphone access is needed to analyze audio being played.');
         return;
       }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
-      const { recording: rec } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recordingRef.current = rec;
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
       setRecording(true);
       setRecordingTime(0);
       setResult(null);
@@ -144,12 +143,9 @@ export default function AnalyzeScreen() {
     stopPulse();
     if (timerRef.current) clearInterval(timerRef.current);
 
-    if (!recordingRef.current) return;
-
     try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordingRef.current = null;
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
 
       if (!uri) {
         Alert.alert('Error', 'No recording URI available');
@@ -157,7 +153,7 @@ export default function AnalyzeScreen() {
       }
 
       setAnalyzing(true);
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      await setAudioModeAsync({ allowsRecording: false });
 
       const formData = new FormData();
       formData.append('file', {

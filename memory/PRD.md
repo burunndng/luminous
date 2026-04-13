@@ -46,6 +46,15 @@ A comprehensive mobile tool app for DJs featuring BPM detection, harmonic mixing
 - Sourced from: Carl Cox, Sasha, Richie Hawtin, Astrix, Infected Mushroom, Pioneer DJ Academy, Mark Davis (Mixed In Key), and more
 - Category filter with horizontal scroll
 
+### 7. Premium Audio Analyzer (NEW)
+- **File Upload Analysis**: Upload MP3, FLAC, WAV, M4A, AAC, OGG files (max 50MB)
+- **Live Microphone Recording**: Record audio playing nearby via device mic
+- **BPM Detection**: librosa beat_track with dual-method confidence scoring
+- **Key Detection**: Krumhansl-Schmuckler algorithm using chroma features, mapped to Camelot codes
+- **Results Display**: Large BPM/key readout, confidence bars, Camelot badge, beat count
+- **Save to Library**: One-tap save analyzed track to library with all detected metadata
+- **Tips Section**: Guidance for optimal recording/upload conditions
+
 ## Tech Stack
 - **Frontend:** Expo React Native (SDK 54) with expo-router tab navigation
 - **Backend:** FastAPI (Python) on port 8001
