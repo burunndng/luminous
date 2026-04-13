@@ -254,12 +254,12 @@ export default function AIScreen() {
               {loading ? (
                 <ActivityIndicator color="#000" />
               ) : (
-                <>
+                <View style={styles.submitButtonContent}>
                   <Ionicons name="sparkles" size={20} color="#000" />
                   <Text style={styles.submitButtonText}>
                     Get Recommendations
                   </Text>
-                </>
+                </View>
               )}
             </TouchableOpacity>
 
@@ -439,6 +439,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
     marginRight: 10,
+  },
+  submitButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   submitButtonDisabled: {
     opacity: 0.6,
