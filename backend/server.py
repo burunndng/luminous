@@ -579,60 +579,225 @@ async def export_setlist_pdf(setlist_id: str):
 
 # ================== AUDIO ANALYSIS ROUTES ==================
 
+import librosa
+import numpy as np
+import soundfile as sf
+import tempfile
+
+# Krumhansl-Schmuckler key profiles
+MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+
+PITCH_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+# Musical key to Camelot code mapping
+MUSICAL_KEY_TO_CAMELOT = {
+    'C major': '8B', 'C minor': '5A',
+    'C# major': '3B', 'C# minor': '12A',
+    'D major': '10B', 'D minor': '7A',
+    'D# major': '5B', 'D# minor': '2A',
+    'E major': '12B', 'E minor': '9A',
+    'F major': '7B', 'F minor': '4A',
+    'F# major': '2B', 'F# minor': '11A',
+    'G major': '9B', 'G minor': '6A',
+    'G# major': '4B', 'G# minor': '1A',
+    'A major': '11B', 'A minor': '8A',
+    'A# major': '6B', 'A# minor': '3A',
+    'B major': '1B', 'B minor': '10A',
+}
+
+def detect_key(y, sr):
+    """Detect musical key using Krumhansl-Schmuckler algorithm"""
+    try:
+        chroma = librosa.feature.chroma_stft(y=y, sr=sr)
+        chroma_avg = np.mean(chroma, axis=1)
+        
+        best_corr = -2
+        best_key = 'C major'
+        
+        for shift in range(12):
+            shifted = np.roll(chroma_avg, -shift)
+            
+            major_corr = np.corrcoef(shifted, MAJOR_PROFILE)[0, 1]
+            if major_corr > best_corr:
+                best_corr = major_corr
+                best_key = f'{PITCH_NAMES[shift]} major'
+            
+            minor_corr = np.corrcoef(shifted, MINOR_PROFILE)[0, 1]
+            if minor_corr > best_corr:
+                best_corr = minor_corr
+                best_key = f'{PITCH_NAMES[shift]} minor'
+        
+        camelot = MUSICAL_KEY_TO_CAMELOT.get(best_key, '?')
+        confidence = round(max(0, min(1, (best_corr + 1) / 2)) * 100)
+        return best_key, camelot, confidence
+    except Exception as e:
+        logger.error(f"Key detection error: {e}")
+        return None, None, 0
+
+def detect_bpm(y, sr):
+    """Detect BPM using librosa beat tracking"""
+    try:
+        tempo, beats = librosa.beat.beat_track(y=y, sr=sr)
+        bpm = float(tempo[0]) if isinstance(tempo, np.ndarray) else float(tempo)
+        bpm = round(bpm, 1)
+        
+        # Also try onset-based for comparison
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        tempo_alt = librosa.feature.tempo(onset_envelope=onset_env, sr=sr)
+        alt_bpm = float(tempo_alt[0]) if isinstance(tempo_alt, np.ndarray) else float(tempo_alt)
+        
+        # Confidence based on consistency between methods
+        diff = abs(bpm - alt_bpm)
+        confidence = max(0, min(100, int(100 - diff * 2)))
+        
+        return bpm, confidence, len(beats)
+    except Exception as e:
+        logger.error(f"BPM detection error: {e}")
+        return None, 0, 0
+
 class AudioAnalysisResult(BaseModel):
     filename: str
     estimated_bpm: Optional[float] = None
+    bpm_confidence: int = 0
     suggested_key: Optional[str] = None
+    camelot_code: Optional[str] = None
+    key_confidence: int = 0
     duration_seconds: Optional[float] = None
+    beat_count: int = 0
     analysis_notes: str
+    source: str = "upload"
 
-@api_router.post("/audio/analyze", response_model=AudioAnalysisResult)
+@api_router.post("/audio/analyze")
 async def analyze_audio(file: UploadFile = File(...)):
-    """
-    Analyze uploaded audio file for BPM and key estimation.
-    Note: This is a simplified analysis. For production, use dedicated audio analysis libraries.
-    """
+    """Analyze uploaded audio file for BPM and key using librosa"""
     allowed_extensions = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac']
     filename = file.filename or "unknown"
     ext = os.path.splitext(filename)[1].lower()
     
     if ext not in allowed_extensions:
         raise HTTPException(
-            status_code=400, 
-            detail=f"Unsupported file format. Allowed: {', '.join(allowed_extensions)}"
+            status_code=400,
+            detail=f"Unsupported format. Allowed: {', '.join(allowed_extensions)}"
         )
     
-    # Read file content
     content = await file.read()
     file_size = len(content)
     
-    # Estimate duration based on file size (rough approximation)
-    # MP3: ~1MB per minute at 128kbps
-    estimated_duration = (file_size / (1024 * 1024)) * 60  # rough estimate
+    if file_size > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Max 50MB.")
     
-    # For a real implementation, you'd use librosa or similar
-    # Here we provide guidance for manual entry
-    analysis_notes = f"""
-Audio file received: {filename}
-File size: {file_size / 1024:.1f} KB
-Estimated duration: ~{estimated_duration:.0f} seconds
+    # Write to temp file for librosa
+    try:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        
+        # Load audio with librosa (mono, 22050 Hz default)
+        y, sr = librosa.load(tmp_path, sr=22050, mono=True, duration=120)
+        duration = librosa.get_duration(y=y, sr=sr)
+        
+        # Detect BPM
+        bpm, bpm_conf, beat_count = detect_bpm(y, sr)
+        
+        # Detect Key
+        key, camelot, key_conf = detect_key(y, sr)
+        
+        # Build notes
+        notes_parts = [f"File: {filename} ({file_size / 1024:.0f} KB)"]
+        notes_parts.append(f"Duration: {duration:.1f}s ({duration/60:.1f} min)")
+        notes_parts.append(f"Sample rate: {sr} Hz")
+        
+        if bpm:
+            notes_parts.append(f"BPM: {bpm} (confidence: {bpm_conf}%)")
+        if key:
+            notes_parts.append(f"Key: {key} / Camelot: {camelot} (confidence: {key_conf}%)")
+        if beat_count > 0:
+            notes_parts.append(f"Detected {beat_count} beats")
+        
+        # Cleanup temp file
+        os.unlink(tmp_path)
+        
+        return {
+            "filename": filename,
+            "estimated_bpm": bpm,
+            "bpm_confidence": bpm_conf,
+            "suggested_key": key,
+            "camelot_code": camelot,
+            "key_confidence": key_conf,
+            "duration_seconds": round(duration, 1),
+            "beat_count": beat_count,
+            "analysis_notes": "\n".join(notes_parts),
+            "source": "upload"
+        }
+        
+    except Exception as e:
+        logger.error(f"Audio analysis failed: {str(e)}")
+        # Cleanup on error
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
-For accurate BPM detection:
-1. Use the Tap Tempo feature while listening
-2. Or use software like rekordbox, Serato, or Mixed In Key
-
-For key detection:
-1. Use Mixed In Key or KeyFinder software
-2. Or train your ear with reference tracks
-"""
+@api_router.post("/audio/analyze-recording")
+async def analyze_recording(file: UploadFile = File(...)):
+    """Analyze audio recorded from microphone (typically WAV/M4A)"""
+    content = await file.read()
+    file_size = len(content)
+    filename = file.filename or "recording.wav"
     
-    return AudioAnalysisResult(
-        filename=filename,
-        estimated_bpm=None,
-        suggested_key=None,
-        duration_seconds=round(estimated_duration, 1),
-        analysis_notes=analysis_notes.strip()
-    )
+    if file_size < 1024:
+        raise HTTPException(status_code=400, detail="Recording too short or empty")
+    
+    try:
+        ext = os.path.splitext(filename)[1].lower() or '.wav'
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        
+        y, sr = librosa.load(tmp_path, sr=22050, mono=True)
+        duration = librosa.get_duration(y=y, sr=sr)
+        
+        if duration < 5:
+            os.unlink(tmp_path)
+            raise HTTPException(status_code=400, detail="Recording too short. Need at least 5 seconds for analysis.")
+        
+        bpm, bpm_conf, beat_count = detect_bpm(y, sr)
+        key, camelot, key_conf = detect_key(y, sr)
+        
+        notes_parts = [f"Mic recording analyzed ({duration:.1f}s)"]
+        if bpm:
+            notes_parts.append(f"BPM: {bpm} (confidence: {bpm_conf}%)")
+        if key:
+            notes_parts.append(f"Key: {key} / Camelot: {camelot} (confidence: {key_conf}%)")
+        
+        if duration < 15:
+            notes_parts.append("Tip: Longer recordings (30s+) give more accurate results")
+        
+        os.unlink(tmp_path)
+        
+        return {
+            "filename": "mic_recording",
+            "estimated_bpm": bpm,
+            "bpm_confidence": bpm_conf,
+            "suggested_key": key,
+            "camelot_code": camelot,
+            "key_confidence": key_conf,
+            "duration_seconds": round(duration, 1),
+            "beat_count": beat_count,
+            "analysis_notes": "\n".join(notes_parts),
+            "source": "microphone"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Recording analysis failed: {str(e)}")
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 # ================== DJ TIPS DATABASE ==================
 

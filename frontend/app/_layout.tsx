@@ -107,6 +107,22 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="analyze"
+        options={{
+          title: 'Analyze',
+          headerTitle: 'Audio Analyzer',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIconWrap : undefined}>
+              <MaterialCommunityIcons
+                name="waveform"
+                size={24}
+                color={color}
+              />
+            </View>
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="practice"
         options={{
           title: 'Practice',
