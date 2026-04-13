@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,10 @@ import {
   TouchableOpacity,
   ScrollView,
   Animated,
-  Dimensions,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-const { width } = Dimensions.get('window');
 
 export default function BPMScreen() {
   const [bpm, setBpm] = useState<number>(0);
@@ -20,7 +17,7 @@ export default function BPMScreen() {
   const [isActive, setIsActive] = useState(false);
   const [manualBpm, setManualBpm] = useState(120);
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const waveformAnim = useRef(new Animated.Value(0)).current;
+  const glowAnim = useRef(new Animated.Value(0)).current;
 
   // Reset after 2 seconds of no tapping
   useEffect(() => {
@@ -33,14 +30,14 @@ export default function BPMScreen() {
     }
   }, [taps]);
 
-  // Pulse animation
+  // Pulse animation based on BPM
   useEffect(() => {
     if (bpm > 0) {
       const interval = 60000 / bpm;
       const pulse = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.15,
+            toValue: 1.12,
             duration: interval * 0.15,
             useNativeDriver: true,
           }),
@@ -56,24 +53,30 @@ export default function BPMScreen() {
     }
   }, [bpm]);
 
-  // Waveform animation
+  // Glow animation
   useEffect(() => {
-    const wave = Animated.loop(
-      Animated.timing(waveformAnim, {
-        toValue: 1,
-        duration: 2000,
-        useNativeDriver: true,
-      })
+    const glow = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
     );
-    wave.start();
-    return () => wave.stop();
+    glow.start();
+    return () => glow.stop();
   }, []);
 
-  const handleTap = () => {
+  const handleTap = useCallback(() => {
     const now = Date.now();
     setIsActive(true);
-    
-    // Trigger haptic feedback if available
+
     if (Platform.OS !== 'web') {
       try {
         const Haptics = require('expo-haptics');
@@ -81,19 +84,20 @@ export default function BPMScreen() {
       } catch (e) {}
     }
 
-    const newTaps = [...taps, now].slice(-8); // Keep last 8 taps
-    setTaps(newTaps);
-
-    if (newTaps.length >= 2) {
-      const intervals: number[] = [];
-      for (let i = 1; i < newTaps.length; i++) {
-        intervals.push(newTaps[i] - newTaps[i - 1]);
+    setTaps(prev => {
+      const newTaps = [...prev, now].slice(-8);
+      if (newTaps.length >= 2) {
+        const intervals: number[] = [];
+        for (let i = 1; i < newTaps.length; i++) {
+          intervals.push(newTaps[i] - newTaps[i - 1]);
+        }
+        const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        const calculatedBpm = Math.round(60000 / avgInterval);
+        setBpm(Math.min(Math.max(calculatedBpm, 20), 300));
       }
-      const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-      const calculatedBpm = Math.round(60000 / avgInterval);
-      setBpm(Math.min(Math.max(calculatedBpm, 20), 300)); // Clamp between 20-300
-    }
-  };
+      return newTaps;
+    });
+  }, []);
 
   const resetBpm = () => {
     setTaps([]);
@@ -105,41 +109,34 @@ export default function BPMScreen() {
     setManualBpm((prev) => Math.min(Math.max(prev + delta, 20), 300));
   };
 
-  const useManualBpm = () => {
-    setBpm(manualBpm);
-  };
-
-  // Generate waveform bars
-  const generateWaveform = () => {
-    const bars = [];
-    for (let i = 0; i < 30; i++) {
-      const height = Math.random() * 60 + 20;
-      bars.push(
-        <Animated.View
-          key={i}
-          style={[
-            styles.waveBar,
-            {
-              height: bpm > 0 ? height : 20,
-              opacity: waveformAnim.interpolate({
-                inputRange: [0, 0.5, 1],
-                outputRange: [0.5, 1, 0.5],
-              }),
-            },
-          ]}
-        />
-      );
-    }
-    return bars;
-  };
+  // Memoized waveform bars
+  const waveformBars = useRef(
+    Array.from({ length: 30 }, () => Math.random() * 60 + 20)
+  ).current;
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Waveform Visualization */}
         <View style={styles.waveformContainer}>
-          <Text style={styles.sectionTitle}>Audio Waveform</Text>
-          <View style={styles.waveform}>{generateWaveform()}</View>
+          <Text style={styles.sectionLabel}>WAVEFORM</Text>
+          <View style={styles.waveform}>
+            {waveformBars.map((height, i) => (
+              <Animated.View
+                key={i}
+                style={[
+                  styles.waveBar,
+                  {
+                    height: bpm > 0 ? height : 16,
+                    opacity: glowAnim.interpolate({
+                      inputRange: [0, 0.5, 1],
+                      outputRange: [0.4, 1, 0.4],
+                    }),
+                  },
+                ]}
+              />
+            ))}
+          </View>
         </View>
 
         {/* BPM Display */}
@@ -160,14 +157,15 @@ export default function BPMScreen() {
 
         {/* Tap Button */}
         <TouchableOpacity
+          testID="tap-tempo-btn"
           style={[styles.tapButton, isActive && styles.tapButtonActive]}
           onPress={handleTap}
           activeOpacity={0.7}
         >
-          <Ionicons
-            name="hand-left"
+          <MaterialCommunityIcons
+            name="gesture-tap"
             size={48}
-            color={isActive ? '#1a1a2e' : '#00D4FF'}
+            color={isActive ? '#0d0d1a' : '#00D4FF'}
           />
           <Text style={[styles.tapText, isActive && styles.tapTextActive]}>
             TAP TEMPO
@@ -175,63 +173,58 @@ export default function BPMScreen() {
         </TouchableOpacity>
 
         {/* Reset Button */}
-        <TouchableOpacity style={styles.resetButton} onPress={resetBpm}>
-          <Ionicons name="refresh" size={20} color="#FF6B6B" />
+        <TouchableOpacity testID="reset-bpm-btn" style={styles.resetButton} onPress={resetBpm}>
+          <Ionicons name="refresh" size={18} color="#FF6B6B" />
           <Text style={styles.resetText}>Reset</Text>
         </TouchableOpacity>
 
         {/* Manual BPM Adjuster */}
         <View style={styles.manualContainer}>
-          <Text style={styles.sectionTitle}>Manual BPM</Text>
+          <Text style={styles.sectionLabel}>MANUAL BPM</Text>
           <View style={styles.manualControls}>
-            <TouchableOpacity
-              style={styles.adjustButton}
-              onPress={() => adjustManualBpm(-5)}
-            >
-              <Ionicons name="remove" size={24} color="#fff" />
+            <TouchableOpacity style={styles.adjustButton} onPress={() => adjustManualBpm(-5)}>
+              <Text style={styles.adjustText}>-5</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.adjustButton}
-              onPress={() => adjustManualBpm(-1)}
-            >
+            <TouchableOpacity style={styles.adjustButton} onPress={() => adjustManualBpm(-1)}>
               <Text style={styles.adjustText}>-1</Text>
             </TouchableOpacity>
             <View style={styles.manualBpmDisplay}>
               <Text style={styles.manualBpmValue}>{manualBpm}</Text>
             </View>
-            <TouchableOpacity
-              style={styles.adjustButton}
-              onPress={() => adjustManualBpm(1)}
-            >
+            <TouchableOpacity style={styles.adjustButton} onPress={() => adjustManualBpm(1)}>
               <Text style={styles.adjustText}>+1</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.adjustButton}
-              onPress={() => adjustManualBpm(5)}
-            >
-              <Ionicons name="add" size={24} color="#fff" />
+            <TouchableOpacity style={styles.adjustButton} onPress={() => adjustManualBpm(5)}>
+              <Text style={styles.adjustText}>+5</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.useButton} onPress={useManualBpm}>
+          <TouchableOpacity
+            testID="use-manual-bpm-btn"
+            style={styles.useButton}
+            onPress={() => setBpm(manualBpm)}
+          >
             <Text style={styles.useButtonText}>Use This BPM</Text>
           </TouchableOpacity>
         </View>
 
         {/* BPM Guide */}
         <View style={styles.guideContainer}>
-          <Text style={styles.sectionTitle}>BPM Reference</Text>
+          <Text style={styles.sectionLabel}>BPM REFERENCE</Text>
           <View style={styles.guideGrid}>
             {[
-              { genre: 'Hip-Hop', range: '85-115' },
-              { genre: 'House', range: '120-130' },
-              { genre: 'Techno', range: '130-150' },
-              { genre: 'Drum & Bass', range: '160-180' },
-              { genre: 'Dubstep', range: '140-150' },
-              { genre: 'Psytrance', range: '140-150' },
+              { genre: 'Hip-Hop', range: '85-115', color: '#FF6B6B' },
+              { genre: 'House', range: '120-130', color: '#00D4FF' },
+              { genre: 'Techno', range: '130-150', color: '#A55EEA' },
+              { genre: 'Drum & Bass', range: '160-180', color: '#FF9F43' },
+              { genre: 'Dubstep', range: '140-150', color: '#54A0FF' },
+              { genre: 'Psytrance', range: '140-150', color: '#1DD1A1' },
             ].map((item, index) => (
               <View key={index} style={styles.guideItem}>
-                <Text style={styles.guideGenre}>{item.genre}</Text>
-                <Text style={styles.guideRange}>{item.range}</Text>
+                <View style={[styles.guideAccent, { backgroundColor: item.color }]} />
+                <View style={styles.guideContent}>
+                  <Text style={styles.guideGenre}>{item.genre}</Text>
+                  <Text style={[styles.guideRange, { color: item.color }]}>{item.range}</Text>
+                </View>
               </View>
             ))}
           </View>
@@ -244,100 +237,104 @@ export default function BPMScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f0f1a',
+    backgroundColor: '#0a0a14',
   },
   scrollContent: {
     padding: 16,
   },
-  waveformContainer: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    color: '#888',
+  sectionLabel: {
+    fontSize: 11,
+    color: '#555',
     marginBottom: 10,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 2,
+    fontWeight: '700',
+  },
+  waveformContainer: {
+    marginBottom: 24,
   },
   waveform: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     height: 100,
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    padding: 10,
+    backgroundColor: '#111122',
+    borderRadius: 14,
+    padding: 12,
   },
   waveBar: {
-    width: 6,
+    width: 5,
     backgroundColor: '#00D4FF',
     borderRadius: 3,
   },
   bpmDisplayContainer: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 28,
   },
   bpmLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 10,
-    letterSpacing: 2,
+    fontSize: 11,
+    color: '#555',
+    marginBottom: 12,
+    letterSpacing: 3,
+    fontWeight: '600',
   },
   bpmCircle: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: '#1a1a2e',
-    borderWidth: 4,
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: '#111122',
+    borderWidth: 3,
     borderColor: '#00D4FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   bpmValue: {
     fontSize: 56,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: '#00D4FF',
   },
   tapCount: {
     marginTop: 10,
-    fontSize: 14,
-    color: '#666',
+    fontSize: 13,
+    color: '#555',
   },
   tapButton: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 20,
-    padding: 30,
+    backgroundColor: '#111122',
+    borderRadius: 18,
+    padding: 28,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#00D4FF',
-    marginBottom: 15,
+    marginBottom: 12,
   },
   tapButtonActive: {
     backgroundColor: '#00D4FF',
   },
   tapText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#00D4FF',
-    marginTop: 10,
+    marginTop: 8,
+    letterSpacing: 2,
   },
   tapTextActive: {
-    color: '#1a1a2e',
+    color: '#0d0d1a',
   },
   resetButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 12,
-    marginBottom: 30,
+    padding: 10,
+    marginBottom: 28,
   },
   resetText: {
     color: '#FF6B6B',
-    marginLeft: 8,
-    fontSize: 16,
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '600',
   },
   manualContainer: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#111122',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
@@ -346,13 +343,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 15,
+    marginBottom: 16,
   },
   adjustButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#2d2d44',
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#1a1a2e',
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 5,
@@ -360,16 +357,16 @@ const styles = StyleSheet.create({
   adjustText: {
     color: '#fff',
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   manualBpmDisplay: {
-    width: 80,
+    width: 90,
     alignItems: 'center',
     marginHorizontal: 10,
   },
   manualBpmValue: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 36,
+    fontWeight: '800',
     color: '#fff',
   },
   useButton: {
@@ -379,12 +376,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   useButtonText: {
-    color: '#1a1a2e',
-    fontWeight: 'bold',
-    fontSize: 16,
+    color: '#0d0d1a',
+    fontWeight: '800',
+    fontSize: 15,
   },
   guideContainer: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#111122',
     borderRadius: 16,
     padding: 20,
   },
@@ -395,19 +392,26 @@ const styles = StyleSheet.create({
   },
   guideItem: {
     width: '48%',
-    backgroundColor: '#2d2d44',
-    borderRadius: 10,
-    padding: 12,
+    flexDirection: 'row',
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    overflow: 'hidden',
     marginBottom: 10,
   },
+  guideAccent: {
+    width: 4,
+  },
+  guideContent: {
+    padding: 12,
+  },
   guideGenre: {
-    color: '#fff',
-    fontSize: 14,
+    color: '#ddd',
+    fontSize: 13,
     fontWeight: '600',
   },
   guideRange: {
-    color: '#00D4FF',
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 3,
+    fontWeight: '700',
   },
 });
